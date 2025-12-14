@@ -1,0 +1,24 @@
+# API Keys & Secrets
+.env
+*.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Data files (zu gross für GitHub)
+data/
+*.parquet
+*.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
