@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "League of Legends Win Prediction from Champion Select"
+authors:
+  - family-names: "Aziri"
+    given-names: "Arber"
+    affiliation: "FHNW"
+version: "1.0.0"
+date-released: "2025-01-04"
+url: "https://github.com/lasmiiranda886/lol-thesis-research"
+repository-code: "https://github.com/lasmiiranda886/lol-thesis-research"
+license: MIT
+keywords:
+  - machine-learning
+  - league-of-legends
+  - esports
+  - win-prediction
+  - gradient-boosting
+  - siamese-network
+abstract: >-
+  This project investigates how accurately the outcome of a League of Legends
+  match can be predicted during champion select, when only the information
+  available to a single player is used. The final model achieves an AUC of 0.58
+  and accuracy of 55% using a weighted ensemble of LightGBM, XGBoost, and ExtraTrees.
