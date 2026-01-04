@@ -114,12 +114,12 @@ If you use this code or methodology, please cite:
 
 ```
 Aziri, A. (2025). Vorhersage der Gewinnwahrscheinlichkeit von League-of-Legends-Spielen
-während der Championauswahl mittels Machine Learning. Bachelor Thesis, FHNW.
+während der Championauswahl mittels Machine Learning. Bachelor Thesis, BFH.
 ```
 
 ## License
 
-This project was created for academic purposes as part of a Bachelor thesis at FHNW.
+This project was created for academic purposes as part of a Bachelor thesis at BFH.
 
 ## Acknowledgments
 

@@ -17,7 +17,7 @@ from pathlib import Path
 import seaborn as sns
 
 # Paths
-DATA_DIR = Path('data/interim/aggregate')
+DATA_DIR = Path('data/final')
 OUTPUT_DIR = Path('thesis/figures/chapter4')
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 

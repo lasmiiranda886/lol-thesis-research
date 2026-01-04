@@ -25,8 +25,8 @@ from scipy.optimize import minimize
 # =============================================================================
 
 CONFIG = {
-    'train_path': 'data/interim/aggregate/hero_global_2025_random_train_siamese.parquet',
-    'test_path': 'data/interim/aggregate/hero_global_2025_random_test_siamese.parquet',
+    'train_path': 'data/final/hero_dataset_random_train_final.parquet',
+    'test_path': 'data/final/hero_dataset_random_test_final.parquet',
     'output_dir': 'models',
 }
 

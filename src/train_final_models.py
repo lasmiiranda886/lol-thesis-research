@@ -23,7 +23,7 @@ import xgboost as xgb
 # CONFIG
 # =============================================================================
 
-DATA_DIR = Path('data/interim/aggregate')
+DATA_DIR = Path('data/final')
 MODEL_DIR = Path('models')
 REPORT_DIR = Path('reports')
 MODEL_DIR.mkdir(exist_ok=True)

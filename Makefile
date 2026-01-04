@@ -5,21 +5,23 @@ help:
 	@echo "LoL Win Prediction - Available commands:"
 	@echo ""
 	@echo "  make setup      - Install dependencies"
-	@echo "  make train      - Train final models (requires data/final/)"
+	@echo "  make train      - Train final models (uses pre-computed siamese scores in data/final/)"
 	@echo "  make evaluate   - Evaluate models and generate metrics"
 	@echo "  make figures    - Generate thesis figures"
 	@echo "  make all        - Run full pipeline (train + evaluate + figures)"
 	@echo ""
-	@echo "Data collection (requires Riot API key in .env):"
+	@echo "Data collection (requires Riot API key in .env and intermediate data):"
 	@echo "  make collect    - Collect match data from Riot API"
+	@echo ""
+	@echo "Note: Siamese network training (nn_siamese_final.py) requires intermediate"
+	@echo "      data from full pipeline. Final datasets include pre-computed scores."
 
 # Setup
 setup:
 	pip install -r requirements.txt
 
-# Train models
+# Train models (siamese scores pre-computed in final datasets)
 train:
-	python src/nn_siamese_final.py
 	python src/train_final_models.py
 
 # Evaluate

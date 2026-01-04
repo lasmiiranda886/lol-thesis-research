@@ -43,3 +43,5 @@ urllib3==2.5.0
 wcwidth==0.2.14
 xgboost==2.1.4
 zipp==3.23.0
+torch>=2.0.0
+lightgbm>=4.0.0
