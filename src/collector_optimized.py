@@ -1,209 +1,202 @@
 #!/usr/bin/env python3
 """
-Simpler, funktionierender Collector - testet erst die API
+Data Directory Scanner
+Scannt das komplette Projektverzeichnis und gibt eine Übersicht über alle Daten.
 """
 
-import requests
-import time
-import pandas as pd
+import os
+import sys
 from pathlib import Path
+from collections import defaultdict
 import json
 
-def test_api_key(api_key):
-    """Testet ob der API Key funktioniert"""
-    headers = {"X-Riot-Token": api_key}
-    
-    # Test 1: Account API (sollte immer funktionieren)
-    test_url = "https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/Faker/T1"
-    r = requests.get(test_url, headers=headers)
-    print(f"Account API Test: {r.status_code}")
-    if r.status_code != 200:
-        print(f"Error: {r.text}")
-        return False
-    
-    # Test 2: Ein bekanntes Match
-    test_match = "EUW1_6851875459"  # Ein recent Match
-    match_url = f"https://europe.api.riotgames.com/lol/match/v5/matches/{test_match}"
-    r = requests.get(match_url, headers=headers)
-    print(f"Match API Test: {r.status_code}")
-    
-    return r.status_code == 200
+def get_size_str(size_bytes):
+    """Konvertiert Bytes in lesbare Größe"""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_bytes < 1024:
+            return f"{size_bytes:.2f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.2f} PB"
 
-def get_puuid_from_name(name, tag, api_key):
-    """Holt PUUID von einem bekannten Spieler"""
-    headers = {"X-Riot-Token": api_key}
-    url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{name}/{tag}"
-    r = requests.get(url, headers=headers)
-    if r.status_code == 200:
-        return r.json().get('puuid')
-    return None
-
-def simple_collect(api_key, num_matches=100):
-    """Einfacher, robuster Collector"""
-    headers = {"X-Riot-Token": api_key}
+def scan_directory(base_path):
+    """Scannt ein Verzeichnis rekursiv"""
     
-    # Bekannte High-Elo Spieler (manuell, aber funktioniert garantiert)
-    known_players = [
-        ("Caps", "EUW"),
-        ("Jankos", "EUW"), 
-        ("Rekkles", "EUW"),
-        ("Bwipo", "EUW"),
-        ("Upset", "EUW"),
-    ]
+    results = {
+        "base_path": str(base_path),
+        "summary": {
+            "total_files": 0,
+            "total_size": 0,
+            "by_extension": defaultdict(lambda: {"count": 0, "size": 0}),
+        },
+        "directories": {},
+        "important_files": [],
+        "parquet_files": [],
+        "json_dirs": [],
+        "pkl_files": [],
+    }
     
-    all_match_ids = set()
-    all_participants = []
+    # Wichtige Dateitypen
+    important_extensions = {'.parquet', '.pkl', '.json', '.csv', '.txt', '.py'}
     
-    print("=== SIMPLE COLLECTOR ===")
-    
-    # Schritt 1: PUUIDs holen
-    puuids = []
-    for name, tag in known_players:
-        puuid = get_puuid_from_name(name, tag, api_key)
-        if puuid:
-            puuids.append(puuid)
-            print(f"Found {name}#{tag}: {puuid[:8]}...")
-        time.sleep(0.1)  # Rate limit respect
-    
-    if not puuids:
-        print("ERROR: Konnte keine Spieler finden. API Key prüfen!")
-        return pd.DataFrame()
-    
-    # Schritt 2: Match IDs sammeln
-    print(f"\nCollecting matches from {len(puuids)} players...")
-    for puuid in puuids:
-        url = f"https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?queue=420&count=20"
-        r = requests.get(url, headers=headers)
+    for root, dirs, files in os.walk(base_path):
+        rel_root = os.path.relpath(root, base_path)
         
-        if r.status_code == 200:
-            matches = r.json()
-            all_match_ids.update(matches)
-            print(f"  Found {len(matches)} matches")
-        else:
-            print(f"  Error {r.status_code} getting matches")
+        # Skip versteckte Verzeichnisse und node_modules
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d != 'node_modules' and d != '__pycache__']
         
-        time.sleep(0.05)  # Rate limit
+        dir_info = {
+            "file_count": len(files),
+            "subdir_count": len(dirs),
+            "files_by_type": defaultdict(int),
+            "total_size": 0,
+        }
         
-        if len(all_match_ids) >= num_matches:
-            break
-    
-    match_ids = list(all_match_ids)[:num_matches]
-    print(f"\nProcessing {len(match_ids)} unique matches...")
-    
-    # Schritt 3: Match Details holen
-    for i, match_id in enumerate(match_ids):
-        if i % 10 == 0:
-            print(f"Progress: {i}/{len(match_ids)}")
+        json_count = 0
         
-        # Region aus Match ID
-        prefix = match_id.split('_')[0]
-        if prefix.startswith('EUW') or prefix.startswith('EUN'):
-            region = 'europe'
-        elif prefix.startswith('NA'):
-            region = 'americas'
-        elif prefix.startswith('KR'):
-            region = 'asia'
-        else:
-            region = 'europe'  # Default
-        
-        url = f"https://{region}.api.riotgames.com/lol/match/v5/matches/{match_id}"
-        r = requests.get(url, headers=headers)
-        
-        if r.status_code == 200:
-            data = r.json()
-            info = data.get('info', {})
+        for f in files:
+            filepath = os.path.join(root, f)
+            try:
+                size = os.path.getsize(filepath)
+            except:
+                size = 0
             
-            # Nur Ranked Solo/Duo
-            if info.get('queueId') != 420:
-                continue
+            ext = os.path.splitext(f)[1].lower()
             
-            for p in info.get('participants', []):
-                all_participants.append({
-                    'matchId': match_id,
-                    'puuid': p.get('puuid'),
-                    'summonerName': p.get('summonerName'),
-                    'championId': p.get('championId'),
-                    'championName': p.get('championName'),
-                    'win': p.get('win'),
-                    'kills': p.get('kills'),
-                    'deaths': p.get('deaths'),
-                    'assists': p.get('assists'),
-                    'teamPosition': p.get('teamPosition'),
-                    'totalDamageDealt': p.get('totalDamageDealtToChampions'),
-                    'goldEarned': p.get('goldEarned'),
+            results["summary"]["total_files"] += 1
+            results["summary"]["total_size"] += size
+            results["summary"]["by_extension"][ext]["count"] += 1
+            results["summary"]["by_extension"][ext]["size"] += size
+            
+            dir_info["files_by_type"][ext] += 1
+            dir_info["total_size"] += size
+            
+            if ext == '.json':
+                json_count += 1
+            
+            # Wichtige Dateien erfassen
+            if ext == '.parquet':
+                results["parquet_files"].append({
+                    "path": os.path.relpath(filepath, base_path),
+                    "size": get_size_str(size),
+                    "size_bytes": size
+                })
+            elif ext == '.pkl':
+                results["pkl_files"].append({
+                    "path": os.path.relpath(filepath, base_path),
+                    "size": get_size_str(size),
+                    "size_bytes": size
                 })
         
-        time.sleep(0.05)  # Rate limit - WICHTIG!
-    
-    # Schritt 4: Rank Daten (vereinfacht)
-    print(f"\nEnriching with rank data...")
-    df = pd.DataFrame(all_participants)
-    
-    if df.empty:
-        print("No data collected!")
-        return df
-    
-    # Unique PUUIDs für Rank lookup
-    unique_puuids = df['puuid'].unique()[:50]  # Limitiert für Test
-    
-    rank_data = {}
-    for puuid in unique_puuids:
-        url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
-        r = requests.get(url, headers=headers)
+        # JSON-Verzeichnisse (viele JSON-Dateien = Match-Daten)
+        if json_count > 100:
+            results["json_dirs"].append({
+                "path": rel_root,
+                "json_count": json_count,
+                "total_size": get_size_str(dir_info["total_size"])
+            })
         
-        if r.status_code == 200:
-            entries = r.json()
-            for entry in entries:
-                if entry.get('queueType') == 'RANKED_SOLO_5x5':
-                    rank_data[puuid] = {
-                        'tier': entry.get('tier'),
-                        'rank': entry.get('rank'),
-                        'lp': entry.get('leaguePoints')
-                    }
-                    break
-        
-        time.sleep(0.05)
+        results["directories"][rel_root] = {
+            "file_count": dir_info["file_count"],
+            "subdir_count": dir_info["subdir_count"],
+            "total_size": get_size_str(dir_info["total_size"]),
+            "files_by_type": dict(dir_info["files_by_type"])
+        }
     
-    # Rank Daten hinzufügen
-    df['tier'] = df['puuid'].map(lambda x: rank_data.get(x, {}).get('tier'))
-    df['rank'] = df['puuid'].map(lambda x: rank_data.get(x, {}).get('rank'))
-    df['lp'] = df['puuid'].map(lambda x: rank_data.get(x, {}).get('lp'))
+    # Sortiere nach Größe
+    results["parquet_files"].sort(key=lambda x: x["size_bytes"], reverse=True)
+    results["pkl_files"].sort(key=lambda x: x["size_bytes"], reverse=True)
+    results["json_dirs"].sort(key=lambda x: x["json_count"], reverse=True)
     
-    return df
+    return results
+
+def print_report(results):
+    """Gibt einen formatierten Bericht aus"""
+    
+    print("=" * 80)
+    print("DATA DIRECTORY SCAN REPORT")
+    print("=" * 80)
+    print(f"\nBase Path: {results['base_path']}")
+    print(f"Total Files: {results['summary']['total_files']:,}")
+    print(f"Total Size: {get_size_str(results['summary']['total_size'])}")
+    
+    print("\n" + "-" * 40)
+    print("FILES BY EXTENSION:")
+    print("-" * 40)
+    ext_stats = sorted(
+        results['summary']['by_extension'].items(),
+        key=lambda x: x[1]['size'],
+        reverse=True
+    )
+    for ext, stats in ext_stats[:15]:
+        ext_name = ext if ext else "(no extension)"
+        print(f"  {ext_name:12} : {stats['count']:>8,} files, {get_size_str(stats['size']):>12}")
+    
+    print("\n" + "-" * 40)
+    print("PARQUET FILES (Data):")
+    print("-" * 40)
+    for pf in results['parquet_files'][:20]:
+        print(f"  {pf['size']:>12} : {pf['path']}")
+    if len(results['parquet_files']) > 20:
+        print(f"  ... and {len(results['parquet_files']) - 20} more parquet files")
+    
+    print("\n" + "-" * 40)
+    print("PKL FILES (Models/Caches):")
+    print("-" * 40)
+    for pf in results['pkl_files'][:15]:
+        print(f"  {pf['size']:>12} : {pf['path']}")
+    if len(results['pkl_files']) > 15:
+        print(f"  ... and {len(results['pkl_files']) - 15} more pkl files")
+    
+    print("\n" + "-" * 40)
+    print("JSON DIRECTORIES (Match Data):")
+    print("-" * 40)
+    for jd in results['json_dirs'][:10]:
+        print(f"  {jd['json_count']:>8,} JSONs, {jd['total_size']:>12} : {jd['path']}")
+    
+    print("\n" + "-" * 40)
+    print("TOP-LEVEL DIRECTORY STRUCTURE:")
+    print("-" * 40)
+    
+    # Nur erste 2 Ebenen zeigen
+    for dir_path, info in sorted(results['directories'].items()):
+        depth = dir_path.count(os.sep)
+        if depth <= 1 and info['file_count'] > 0:
+            print(f"  {dir_path}/")
+            print(f"    Files: {info['file_count']}, Subdirs: {info['subdir_count']}, Size: {info['total_size']}")
+            if info['files_by_type']:
+                types_str = ", ".join([f"{k}: {v}" for k, v in sorted(info['files_by_type'].items(), key=lambda x: -x[1])[:5]])
+                print(f"    Types: {types_str}")
 
 def main():
-    api_key = "RGAPI-c4a287e8-aa5c-492b-aec4-099b4625af12"
+    if len(sys.argv) < 2:
+        print("Usage: python scan_data_directory.py <path_to_scan>")
+        print("\nExample:")
+        print("  python scan_data_directory.py /path/to/lol-data-pipeline")
+        sys.exit(1)
     
-    print("Testing API Key...")
-    if not test_api_key(api_key):
-        print("API Key scheint nicht zu funktionieren!")
-        print("\nMögliche Lösungen:")
-        print("1. Neuen API Key generieren: https://developer.riotgames.com/")
-        print("2. Warten (Rate Limit)")
-        print("3. VPN nutzen falls IP geblockt")
-        return
+    base_path = Path(sys.argv[1])
     
-    print("API Key works!\n")
+    if not base_path.exists():
+        print(f"Error: Path does not exist: {base_path}")
+        sys.exit(1)
     
-    # Daten sammeln
-    df = simple_collect(api_key, num_matches=50)
+    print(f"Scanning {base_path}...")
+    results = scan_directory(base_path)
     
-    if not df.empty:
-        # Speichern
-        output_path = Path("data/test/simple_test.parquet")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(output_path)
-        
-        print(f"\n=== SUCCESS ===")
-        print(f"Collected {len(df)} participants")
-        print(f"Unique matches: {df['matchId'].nunique()}")
-        print(f"Rank coverage: {df['tier'].notna().mean():.1%}")
-        print(f"Saved to: {output_path}")
-        
-        print(f"\nRank distribution:")
-        print(df['tier'].value_counts())
-    else:
-        print("Collection failed!")
+    # Print report
+    print_report(results)
+    
+    # Save JSON for detailed analysis
+    output_file = "scan_results.json"
+    
+    # Convert defaultdict to dict for JSON serialization
+    results['summary']['by_extension'] = dict(results['summary']['by_extension'])
+    
+    with open(output_file, 'w') as f:
+        json.dump(results, f, indent=2, default=str)
+    
+    print(f"\n\nDetailed results saved to: {output_file}")
+    print("You can share this file for further analysis.")
 
 if __name__ == "__main__":
     main()

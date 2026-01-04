@@ -1,581 +1,558 @@
-#!/usr/bin/env python3
 """
-Trainingsskript (Hero-Level) für die Bachelorarbeit:
-Vorhersage der Gewinnwahrscheinlichkeit in der Championauswahl aus Sicht eines "Hero"-Spielers.
-
-Input:
-    data/interim/aggregate/hero_dataset.parquet  (MINIMAL, 25 cols)
-
-WICHTIG:
-- hero_puuid darf im Parquet bleiben (Debug), wird IMMER aus Features ausgeschlossen.
-- Keine Legacy-Features.
-- Matchup-Priors werden leakage-frei NUR aus TRAIN berechnet.
-- Matchups mit n < min_count werden auf global_default (train blue_win mean) gesetzt.
-- Smoothing: Beta(alpha, beta)
-
-Feature Sets:
-- PICKS_ONLY: 10 Champion Picks + hero_is_blue
-- HERO_ONLY: nur Hero-Eigenschaften (Rank/Mastery/Role/Side)
-- PICKS_HERO: PICKS_ONLY + HERO_ONLY
-- PICKS_HERO_MATCHUPS: PICKS_HERO + matchup_wr_hero_{lane} + matchup_log_n_{lane}
-
-Output:
-    data/models/baseline_results_hero_clean.csv
+LoL Win Prediction - Hyperparameter Fine-Tuning V8.1 (Memory Optimized)
+========================================================================
+- Garbage collection after each model
+- Only keeps best model in memory
+- Resume from checkpoint support
+- Reduced ExtraTrees configs (memory hog)
 """
 
-from __future__ import annotations
-
-import os
-import json
-import argparse
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
-
-import numpy as np
 import pandas as pd
+import numpy as np
+from datetime import datetime
+from pathlib import Path
+import warnings
+import pickle
+import json
+import time
+import gc
+warnings.filterwarnings('ignore')
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score, log_loss, accuracy_score
-from sklearn.dummy import DummyClassifier
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score, log_loss
+from sklearn.ensemble import ExtraTreesClassifier
+import lightgbm as lgb
+import xgboost as xgb
 
+# =============================================================================
+# CONFIG
+# =============================================================================
 
-# -----------------------------------------------------------------------------
-# Paths / constants
-# -----------------------------------------------------------------------------
-DATA_PATH = "data/interim/aggregate/hero_dataset.parquet"
+CONFIG = {
+    'train_path': 'data/interim/aggregate/hero_dataset_train_v8.parquet',
+    'test_path': 'data/interim/aggregate/hero_dataset_test_v8.parquet',
+    'features_path': 'data/interim/aggregate/features_v8.pkl',
+    'output_dir': 'data/interim/aggregate',
+    'checkpoint_interval': 25,
+    
+    # Resume from checkpoint if exists
+    'resume_from_checkpoint': True,
+}
 
-ID_COL = "matchId"
-TARGET_COL = "hero_win"
-DEBUG_ID_COLS = ["hero_puuid"]
+# =============================================================================
+# PARAMETER CONFIGURATIONS (REDUCED FOR MEMORY)
+# =============================================================================
 
-LANES = ["top", "jungle", "mid", "adc", "supp"]
-BLUE_CHAMP_COLS = [f"championid_blue_{lane}" for lane in LANES]
-RED_CHAMP_COLS = [f"championid_red_{lane}" for lane in LANES]
-ALL_CHAMP_COLS = BLUE_CHAMP_COLS + RED_CHAMP_COLS
-
-# Hero columns (erlaubt; in deinem minimal parquet vorhanden)
-HERO_COLS = [
-    "hero_is_blue",
-    "hero_teamPosition",
-    "hero_championId",
-    "hero_rank_tier",
-    "hero_rank_div",
-    "hero_leaguePoints",
-    "hero_wins",
-    "hero_losses",
-    "hero_cm_points",
-    "hero_cm_level",
-    "hero_cm_lastPlayTime",
-]
-
-# Matchup features (werden dynamisch hinzugefügt)
-MATCHUP_WR_BLUE_COLS = [f"matchup_wr_blue_{lane}" for lane in LANES]
-MATCHUP_N_COLS       = [f"matchup_n_{lane}" for lane in LANES]
-MATCHUP_WR_HERO_COLS = [f"matchup_wr_hero_{lane}" for lane in LANES]
-MATCHUP_LOGN_COLS    = [f"matchup_log_n_{lane}" for lane in LANES]
-
-
-# -----------------------------------------------------------------------------
-# Experiments (reduced for speed)
-# -----------------------------------------------------------------------------
-@dataclass
-class ExperimentConfig:
-    name: str
-    feature_set: str
-    model_type: str
-    params: Optional[Dict] = None
-
-
-def make_experiments() -> List[ExperimentConfig]:
-    """
-    Schnell-Setup:
-    - Dummy
-    - LogReg (1x)
-    - HGB (1x)
-    - RF  (1x)
-    Für: HERO_ONLY, PICKS_ONLY, PICKS_HERO, PICKS_HERO_MATCHUPS
-    """
-    exps: List[ExperimentConfig] = []
-
-    # Dummy baseline (nur damit LogLoss/AUC sanity bleibt)
-    exps.append(ExperimentConfig("DUMMY_majority__PICKS_HERO", "PICKS_HERO", "dummy", {"strategy": "most_frequent"}))
-
-    # 3 "echte" Modelle, jeweils 4 Feature-Sets
-    feature_sets = ["HERO_ONLY", "PICKS_ONLY", "PICKS_HERO", "PICKS_HERO_MATCHUPS"]
-
-    # Logistic Regression
-    for fs in feature_sets:
-        exps.append(ExperimentConfig(f"LOGREG__{fs}", fs, "logreg", {"C": 1.0}))
-
-    # HistGradientBoosting (oft am besten in deinem Setup)
-    for fs in feature_sets:
-        exps.append(ExperimentConfig(f"HGB__{fs}", fs, "hgb", {"max_iter": 500, "learning_rate": 0.06}))
-
-    # RandomForest (ein Setting)
-    for fs in feature_sets:
-        exps.append(ExperimentConfig(f"RF__{fs}", fs, "rf", {"n_estimators": 300, "max_depth": 12}))
-
-    return exps
-
-
-# -----------------------------------------------------------------------------
-# Feature columns
-# -----------------------------------------------------------------------------
-def _existing(cols: List[str], available: List[str]) -> List[str]:
-    return [c for c in cols if c in available]
-
-
-def build_feature_columns(feature_set: str, available_cols: List[str]) -> List[str]:
-    fs = feature_set.upper()
-
-    hero_side = _existing(["hero_is_blue"], available_cols)
-
-    if fs == "PICKS_ONLY":
-        cols = _existing(ALL_CHAMP_COLS, available_cols) + hero_side
-
-    elif fs == "HERO_ONLY":
-        cols = _existing(HERO_COLS, available_cols)
-
-    elif fs == "PICKS_HERO":
-        cols = _existing(ALL_CHAMP_COLS, available_cols) + hero_side + _existing(HERO_COLS, available_cols)
-
-    elif fs == "PICKS_HERO_MATCHUPS":
-        cols = _existing(ALL_CHAMP_COLS, available_cols) + hero_side + _existing(HERO_COLS, available_cols)
-        cols += _existing(MATCHUP_WR_HERO_COLS, available_cols)
-        cols += _existing(MATCHUP_LOGN_COLS, available_cols)
-
-    else:
-        raise ValueError(f"Unknown feature_set: {feature_set}")
-
-    # Safety: remove debug/id/target
-    cols = [c for c in cols if c not in [ID_COL, TARGET_COL, *DEBUG_ID_COLS]]
-
-    # Dedup preserve order
+def generate_et_configs(n_configs=400):
+    """Generate ExtraTrees configs - REDUCED to avoid OOM."""
+    configs = []
+    
+    # 1. Fine grid around best (n_est=300, depth=15, min_split=10)
+    for n_est in [250, 300, 350, 400]:
+        for depth in [12, 14, 15, 16, 18, 20]:
+            for min_split in [8, 10, 12, 15]:
+                for min_leaf in [1, 2, 3]:
+                    configs.append({
+                        'n_estimators': n_est,
+                        'max_depth': depth,
+                        'min_samples_split': min_split,
+                        'min_samples_leaf': min_leaf,
+                        'max_features': 'sqrt',
+                    })
+    
+    # 2. Bootstrap variations
+    for n_est in [300, 400]:
+        for depth in [15, 20]:
+            for bootstrap in [True, False]:
+                for cw in [None, 'balanced']:
+                    configs.append({
+                        'n_estimators': n_est,
+                        'max_depth': depth,
+                        'min_samples_split': 10,
+                        'min_samples_leaf': 2,
+                        'max_features': 'sqrt',
+                        'bootstrap': bootstrap,
+                        'class_weight': cw,
+                    })
+    
+    # 3. max_features exploration
+    for n_est in [300, 400]:
+        for depth in [15, 20]:
+            for max_feat in ['sqrt', 'log2', 0.5, 0.7, 0.8]:
+                configs.append({
+                    'n_estimators': n_est,
+                    'max_depth': depth,
+                    'min_samples_split': 10,
+                    'min_samples_leaf': 2,
+                    'max_features': max_feat,
+                })
+    
+    # Remove duplicates
+    unique = []
     seen = set()
-    out = []
-    for c in cols:
-        if c not in seen:
-            out.append(c)
-            seen.add(c)
-    return out
-
-
-# -----------------------------------------------------------------------------
-# Matchups (leakage-free + smoothing + min_count=20)
-# -----------------------------------------------------------------------------
-def compute_matchup_tables(
-    train_df: pd.DataFrame,
-    *,
-    min_count: int = 20,
-    alpha: float = 8.0,
-    beta: float = 8.0,
-) -> Tuple[Dict[str, Dict[Tuple[int, int], float]], Dict[str, Dict[Tuple[int, int], int]]]:
-    """
-    Returns per lane:
-      - wr_map[(b,r)] = smoothed P(blue_win | pair)
-      - n_map[(b,r)]  = count(pair)
-    Only keeps pairs with n >= min_count (others default to global).
-    """
-    if "blue_win" not in train_df.columns:
-        raise ValueError("Need 'blue_win' to compute matchup tables.")
-
-    wr_maps: Dict[str, Dict[Tuple[int, int], float]] = {}
-    n_maps: Dict[str, Dict[Tuple[int, int], int]] = {}
-
-    for lane in LANES:
-        b = f"championid_blue_{lane}"
-        r = f"championid_red_{lane}"
-        if b not in train_df.columns or r not in train_df.columns:
-            continue
-
-        g = train_df.groupby([b, r])["blue_win"]
-        cnt = g.size()
-        wins = g.sum()
-
-        keep = cnt[cnt >= min_count].index
-        if len(keep) == 0:
-            wr_maps[lane] = {}
-            n_maps[lane] = {}
-            continue
-
-        cnt_k = cnt.loc[keep].astype(float)
-        wins_k = wins.loc[keep].astype(float)
-
-        smoothed = (wins_k + alpha) / (cnt_k + alpha + beta)
-
-        wr_maps[lane] = smoothed.to_dict()
-        n_maps[lane] = cnt.loc[keep].astype(int).to_dict()
-
-    return wr_maps, n_maps
-
-
-def add_matchup_features(
-    df: pd.DataFrame,
-    wr_maps: dict,
-    n_maps: dict,
-    global_default: float,
-) -> pd.DataFrame:
-    """
-    Adds:
-      matchup_wr_blue_{lane}
-      matchup_n_{lane}
-    Unknown/filtered pairs -> global_default, n=0.
-    """
-    df = df.copy()
-
-    for lane in LANES:
-        b = f"championid_blue_{lane}"
-        r = f"championid_red_{lane}"
-        wr_col = f"matchup_wr_blue_{lane}"
-        n_col  = f"matchup_n_{lane}"
-
-        if b not in df.columns or r not in df.columns:
-            continue
-
-        idx = pd.MultiIndex.from_frame(df[[b, r]])
-
-        wr_map = wr_maps.get(lane, {})
-        n_map = n_maps.get(lane, {})
-
-        if wr_map:
-            s_wr = pd.Series(wr_map)
-            df[wr_col] = s_wr.reindex(idx).values
-            df[wr_col] = df[wr_col].fillna(global_default)
-        else:
-            df[wr_col] = global_default
-
-        if n_map:
-            s_n = pd.Series(n_map)
-            df[n_col] = s_n.reindex(idx).values
-            df[n_col] = df[n_col].fillna(0).astype("int32")
-        else:
-            df[n_col] = 0
-
-    return df
-
-
-def add_matchup_hero_perspective(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Converts blue-based matchup to hero-based:
-      matchup_wr_hero = matchup_wr_blue if hero blue else 1 - matchup_wr_blue
-    Adds:
-      matchup_log_n = log1p(matchup_n)
-    """
-    df = df.copy()
-    hero_blue = df["hero_is_blue"].astype(int).values
-
-    for lane in LANES:
-        wrb = f"matchup_wr_blue_{lane}"
-        n   = f"matchup_n_{lane}"
-        wrh = f"matchup_wr_hero_{lane}"
-        lgn = f"matchup_log_n_{lane}"
-
-        if wrb in df.columns:
-            v = df[wrb].astype(float).values
-            df[wrh] = np.where(hero_blue == 1, v, 1.0 - v)
-
-        if n in df.columns:
-            df[lgn] = np.log1p(df[n].astype(float))
-
-    return df
-
-
-# -----------------------------------------------------------------------------
-# Model factory
-# -----------------------------------------------------------------------------
-def make_model(model_type: str, params: Optional[Dict] = None):
-    params = params or {}
-    mt = model_type.lower()
-
-    if mt == "dummy":
-        base = {"strategy": "most_frequent"}
-        base.update(params)
-        return DummyClassifier(**base)
-
-    if mt == "logreg":
-        base = {"max_iter": 2000, "solver": "lbfgs", "C": 1.0}
-        base.update(params)
-        lr = LogisticRegression(**base)
-        return make_pipeline(StandardScaler(with_mean=True, with_std=True), lr)
-
-    if mt == "rf":
-        base = {"n_estimators": 300, "max_depth": 12, "n_jobs": -1, "random_state": 42}
-        base.update(params)
-        return RandomForestClassifier(**base)
-
-    if mt == "hgb":
-        base = {"max_iter": 500, "learning_rate": 0.06, "random_state": 42}
-        base.update(params)
-        return HistGradientBoostingClassifier(**base)
-
-    raise ValueError(f"Unknown model_type: {model_type}")
-
-
-# -----------------------------------------------------------------------------
-# Metrics
-# -----------------------------------------------------------------------------
-def _safe_auc(y_true: np.ndarray, y_proba: np.ndarray) -> float:
-    try:
-        return float(roc_auc_score(y_true, y_proba))
-    except ValueError:
-        return float("nan")
-
-
-def _safe_logloss(y_true: np.ndarray, y_proba: np.ndarray) -> float:
-    eps = 1e-7
-    y_proba = np.clip(y_proba, eps, 1 - eps)
-    try:
-        return float(log_loss(y_true, y_proba))
-    except ValueError:
-        return float("nan")
-
-
-def get_proba(model, X: pd.DataFrame) -> np.ndarray:
-    if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(X)
-        if proba.shape[1] == 2:
-            return proba[:, 1]
-        return proba[:, 0]
-    if hasattr(model, "decision_function"):
-        from scipy.special import expit
-        return expit(model.decision_function(X))
-    return model.predict(X).astype(float)
-
-
-# -----------------------------------------------------------------------------
-# Load / preprocess
-# -----------------------------------------------------------------------------
-def load_data(path: str) -> pd.DataFrame:
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Dataset not found: {path}")
-
-    df = pd.read_parquet(path)
-
-    required = [ID_COL, TARGET_COL, "hero_is_blue", "blue_win"] + ALL_CHAMP_COLS + HERO_COLS
-    miss = [c for c in required if c not in df.columns]
-    if miss:
-        raise ValueError(f"Missing required columns in dataset (expected minimal parquet): {miss}")
-
-    df[TARGET_COL] = df[TARGET_COL].astype("int8")
-    df["blue_win"] = df["blue_win"].astype("int8")
-
-    return df
-
-
-def prepare_splits(
-    df: pd.DataFrame,
-    feature_set: str,
-    test_size: float,
-    val_size: float,
-    random_state: int,
-    matchup_alpha: float = 8.0,
-    matchup_beta: float = 8.0,
-    matchup_min_count: int = 20,
-):
-    # 1) test split
-    df_trainval, df_test = train_test_split(
-        df,
-        test_size=test_size,
-        stratify=df[TARGET_COL],
-        random_state=random_state,
-    )
-
-    # 2) val split (relative)
-    effective_val_frac = val_size / (1.0 - test_size)
-    df_train, df_val = train_test_split(
-        df_trainval,
-        test_size=effective_val_frac,
-        stratify=df_trainval[TARGET_COL],
-        random_state=random_state,
-    )
-
-    # 3) leakage-free matchup tables (nur wenn benötigt)
-    needs_matchups = feature_set.upper() == "PICKS_HERO_MATCHUPS"
-    if needs_matchups:
-        global_default = float(df_train["blue_win"].astype(int).mean())
-
-        wr_maps, n_maps = compute_matchup_tables(
-            df_train,
-            min_count=matchup_min_count,
-            alpha=matchup_alpha,
-            beta=matchup_beta,
-        )
-
-        df_train = add_matchup_features(df_train, wr_maps, n_maps, global_default)
-        df_test  = add_matchup_features(df_test,  wr_maps, n_maps, global_default)
-        df_val   = add_matchup_features(df_val,   wr_maps, n_maps, global_default)
-
-        df_train = add_matchup_hero_perspective(df_train)
-        df_test  = add_matchup_hero_perspective(df_test)
-        df_val   = add_matchup_hero_perspective(df_val)
-
-        print(f"Matchups kept (n>={matchup_min_count}):", {k: len(v) for k, v in wr_maps.items()})
-        print("global_default (train blue_win mean):", global_default)
-
-    # 4) feature columns
-    available_cols = list(df_train.columns)
-    feature_cols = build_feature_columns(feature_set, available_cols)
-
-    # 5) cleaning / encoding
-    # champ cols -> int32, missing -> -1
-    for col in ALL_CHAMP_COLS:
-        if col in feature_cols:
-            for d in (df_train, df_test, df_val):
-                d[col] = d[col].replace([np.inf, -np.inf], np.nan).fillna(-1).astype("int32")
-
-    # categorical-like -> stable train mapping
-    def is_cat(series: pd.Series) -> bool:
-        # in minimal parquet: hero_teamPosition, hero_rank_tier, hero_rank_div könnten object sein
-        return pd.api.types.is_object_dtype(series.dtype) or isinstance(series.dtype, pd.CategoricalDtype)
-
-    cat_cols = [c for c in feature_cols if is_cat(df_train[c])]
-
-    for c in cat_cols:
-        train_vals = df_train[c].astype("object").fillna("NA")
-        cats = pd.Index(train_vals.unique())
-        mapping = {k: i for i, k in enumerate(cats)}
-        for d in (df_train, df_test, df_val):
-            d[c] = d[c].astype("object").fillna("NA").map(mapping).fillna(-1).astype("int32")
-
-    # remaining numeric -> fillna(0)
-    for c in feature_cols:
-        if c in ALL_CHAMP_COLS or c in cat_cols:
-            continue
-        for d in (df_train, df_test, df_val):
-            d[c] = d[c].replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-    X_train = df_train[feature_cols].copy()
-    X_test  = df_test[feature_cols].copy()
-    X_val   = df_val[feature_cols].copy()
-
-    y_train = df_train[TARGET_COL].astype(int).values
-    y_test  = df_test[TARGET_COL].astype(int).values
-    y_val   = df_val[TARGET_COL].astype(int).values
-
-    return X_train, X_test, X_val, y_train, y_test, y_val, feature_cols
-
-
-# -----------------------------------------------------------------------------
-# Train & eval
-# -----------------------------------------------------------------------------
-def train_and_evaluate(cfg: ExperimentConfig, X_train, X_test, X_val, y_train, y_test, y_val):
-    model = make_model(cfg.model_type, cfg.params)
-    model.fit(X_train, y_train)
-
-    p_tr = get_proba(model, X_train)
-    p_te = get_proba(model, X_test)
-    p_va = get_proba(model, X_val)
-
-    pred_tr = (p_tr >= 0.5).astype(int)
-    pred_te = (p_te >= 0.5).astype(int)
-    pred_va = (p_va >= 0.5).astype(int)
-
-    metrics = {
-        "experiment": cfg.name,
-        "feature_set": cfg.feature_set,
-        "model_type": cfg.model_type,
-        "params": json.dumps(cfg.params or {}, sort_keys=True),
-
-        "n_train": int(len(y_train)),
-        "n_test": int(len(y_test)),
-        "n_val": int(len(y_val)),
-        "n_features": int(X_train.shape[1]),
-
-        "auc_train": _safe_auc(y_train, p_tr),
-        "auc_test":  _safe_auc(y_test,  p_te),
-        "auc_val":   _safe_auc(y_val,   p_va),
-
-        "logloss_train": _safe_logloss(y_train, p_tr),
-        "logloss_test":  _safe_logloss(y_test,  p_te),
-        "logloss_val":   _safe_logloss(y_val,   p_va),
-
-        "acc_train": float(accuracy_score(y_train, pred_tr)),
-        "acc_test":  float(accuracy_score(y_test,  pred_te)),
-        "acc_val":   float(accuracy_score(y_val,   pred_va)),
+    for c in configs:
+        # Set defaults
+        c.setdefault('bootstrap', False)
+        c.setdefault('class_weight', None)
+        key = tuple(sorted(c.items()))
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+    
+    return unique[:n_configs]
+
+
+def generate_lgb_configs(n_configs=600):
+    """Generate LightGBM configs."""
+    configs = []
+    
+    # 1. Fine grid around best
+    for n_est in [175, 200, 225, 250, 300]:
+        for depth in [5, 6, 7, 8]:
+            for lr in [0.03, 0.04, 0.05, 0.06]:
+                for leaves in [25, 31, 40, 50]:
+                    configs.append({
+                        'n_estimators': n_est,
+                        'max_depth': depth,
+                        'learning_rate': lr,
+                        'num_leaves': leaves,
+                        'min_child_samples': 30,
+                    })
+    
+    # 2. Regularization
+    for n_est in [200, 300]:
+        for depth in [6, 8]:
+            for reg_a in [0, 0.05, 0.1, 0.3]:
+                for reg_l in [0, 0.05, 0.1, 0.3]:
+                    configs.append({
+                        'n_estimators': n_est,
+                        'max_depth': depth,
+                        'learning_rate': 0.05,
+                        'num_leaves': 31,
+                        'min_child_samples': 30,
+                        'reg_alpha': reg_a,
+                        'reg_lambda': reg_l,
+                    })
+    
+    # 3. Subsampling
+    for n_est in [200, 300, 400]:
+        for subsample in [0.7, 0.8, 0.9]:
+            for colsample in [0.7, 0.8, 0.9]:
+                configs.append({
+                    'n_estimators': n_est,
+                    'max_depth': 6,
+                    'learning_rate': 0.05,
+                    'num_leaves': 31,
+                    'min_child_samples': 30,
+                    'subsample': subsample,
+                    'colsample_bytree': colsample,
+                })
+    
+    # 4. Lower LR + more estimators
+    for n_est in [400, 500, 600]:
+        for depth in [6, 8]:
+            for lr in [0.01, 0.02, 0.03]:
+                configs.append({
+                    'n_estimators': n_est,
+                    'max_depth': depth,
+                    'learning_rate': lr,
+                    'num_leaves': 31,
+                    'min_child_samples': 30,
+                })
+    
+    # Remove duplicates
+    unique = []
+    seen = set()
+    for c in configs:
+        c.setdefault('reg_alpha', 0)
+        c.setdefault('reg_lambda', 0)
+        c.setdefault('subsample', 1.0)
+        c.setdefault('colsample_bytree', 1.0)
+        key = tuple(sorted(c.items()))
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+    
+    return unique[:n_configs]
+
+
+def generate_xgb_configs(n_configs=600):
+    """Generate XGBoost configs."""
+    configs = []
+    
+    # 1. Fine grid around best
+    for n_est in [250, 300, 350, 400]:
+        for depth in [5, 6, 7, 8]:
+            for lr in [0.02, 0.03, 0.04, 0.05]:
+                for reg_a in [0.05, 0.1, 0.15, 0.2]:
+                    configs.append({
+                        'n_estimators': n_est,
+                        'max_depth': depth,
+                        'learning_rate': lr,
+                        'reg_alpha': reg_a,
+                    })
+    
+    # 2. reg_lambda exploration
+    for n_est in [300, 400]:
+        for depth in [6, 8]:
+            for reg_l in [0, 0.1, 0.5, 1.0, 2.0]:
+                configs.append({
+                    'n_estimators': n_est,
+                    'max_depth': depth,
+                    'learning_rate': 0.03,
+                    'reg_alpha': 0.1,
+                    'reg_lambda': reg_l,
+                })
+    
+    # 3. Subsampling
+    for n_est in [300, 400]:
+        for subsample in [0.6, 0.7, 0.8, 0.9]:
+            for colsample in [0.6, 0.7, 0.8, 0.9]:
+                configs.append({
+                    'n_estimators': n_est,
+                    'max_depth': 6,
+                    'learning_rate': 0.03,
+                    'reg_alpha': 0.1,
+                    'subsample': subsample,
+                    'colsample_bytree': colsample,
+                })
+    
+    # 4. min_child_weight + gamma
+    for n_est in [300, 400]:
+        for mcw in [1, 3, 5, 10]:
+            for gamma in [0, 0.1, 0.5]:
+                configs.append({
+                    'n_estimators': n_est,
+                    'max_depth': 6,
+                    'learning_rate': 0.03,
+                    'reg_alpha': 0.1,
+                    'min_child_weight': mcw,
+                    'gamma': gamma,
+                })
+    
+    # 5. Higher estimators
+    for n_est in [500, 600, 800]:
+        for depth in [6, 8]:
+            for lr in [0.01, 0.02]:
+                configs.append({
+                    'n_estimators': n_est,
+                    'max_depth': depth,
+                    'learning_rate': lr,
+                    'reg_alpha': 0.1,
+                })
+    
+    # Remove duplicates
+    unique = []
+    seen = set()
+    for c in configs:
+        c.setdefault('reg_alpha', 0)
+        c.setdefault('reg_lambda', 0)
+        c.setdefault('subsample', 1.0)
+        c.setdefault('colsample_bytree', 1.0)
+        c.setdefault('min_child_weight', 1)
+        c.setdefault('gamma', 0)
+        key = tuple(sorted(c.items()))
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+    
+    return unique[:n_configs]
+
+
+# =============================================================================
+# CHECKPOINT MANAGEMENT
+# =============================================================================
+
+def save_checkpoint(results, model_name, path, best_model=None, best_params=None):
+    """Save checkpoint with results."""
+    checkpoint = {
+        'model': model_name,
+        'n_configs': len(results),
+        'results': results,
+        'best_auc': max(r['test_auc'] for r in results) if results else 0,
+        'best_params': best_params,
+        'timestamp': datetime.now().isoformat(),
     }
-    return metrics
+    checkpoint_file = f"{path}/checkpoint_{model_name}.json"
+    with open(checkpoint_file, 'w') as f:
+        json.dump(checkpoint, f, indent=2, default=str)
+    
+    # Save best model separately
+    if best_model is not None:
+        model_file = f"{path}/best_{model_name}_finetuned.pkl"
+        with open(model_file, 'wb') as f:
+            pickle.dump(best_model, f)
+    
+    return checkpoint_file
 
 
-# -----------------------------------------------------------------------------
-# CLI
-# -----------------------------------------------------------------------------
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser()
-    p.add_argument("--data-path", type=str, default=DATA_PATH)
-    p.add_argument("--random-state", type=int, default=42)
-    p.add_argument("--test-size", type=float, default=0.2)
-    p.add_argument("--val-size", type=float, default=0.1)
+def load_checkpoint(model_name, path):
+    """Load checkpoint if exists."""
+    checkpoint_file = f"{path}/checkpoint_{model_name}.json"
+    if Path(checkpoint_file).exists():
+        with open(checkpoint_file, 'r') as f:
+            return json.load(f)
+    return None
 
-    p.add_argument("--matchup-alpha", type=float, default=8.0)
-    p.add_argument("--matchup-beta", type=float, default=8.0)
-    p.add_argument("--matchup-min-count", type=int, default=20)
 
-    return p.parse_args()
+# =============================================================================
+# TRAINING (MEMORY OPTIMIZED)
+# =============================================================================
 
+def run_fine_tuning(model_name, model_class, configs, X_train, y_train, X_test, y_test, 
+                    base_params=None, output_path=None, resume=True):
+    """Run fine-tuning with memory optimization."""
+    print(f"\n{'='*70}")
+    print(f"FINE-TUNING {model_name.upper()} ({len(configs)} configurations)")
+    print(f"{'='*70}")
+    
+    # Check for existing checkpoint
+    start_idx = 0
+    results = []
+    best_auc = 0
+    best_model = None
+    best_params = None
+    best_pred = None
+    
+    if resume and output_path:
+        checkpoint = load_checkpoint(model_name, output_path)
+        if checkpoint:
+            results = checkpoint['results']
+            start_idx = checkpoint['n_configs']
+            # Handle old checkpoint format
+            if 'best_auc' in checkpoint:
+                best_auc = checkpoint['best_auc']
+            elif results:
+                best_auc = max(r['test_auc'] for r in results)
+            best_params = checkpoint.get('best_params')
+            print(f"  Resuming from checkpoint: {start_idx} configs done, best AUC: {best_auc:.4f}")
+    
+    start_time = time.time()
+    
+    for i, params in enumerate(configs):
+        if i < start_idx:
+            continue
+        
+        try:
+            # Build model
+            full_params = {**base_params, **params} if base_params else params
+            model = model_class(**full_params)
+            model.fit(X_train, y_train)
+            
+            # Evaluate
+            train_pred = model.predict_proba(X_train)[:, 1]
+            test_pred = model.predict_proba(X_test)[:, 1]
+            
+            train_auc = roc_auc_score(y_train, train_pred)
+            test_auc = roc_auc_score(y_test, test_pred)
+            test_acc = accuracy_score(y_test, (test_pred > 0.5).astype(int))
+            
+            result = {
+                'config_id': i + 1,
+                'params': params,
+                'train_auc': round(train_auc, 5),
+                'test_auc': round(test_auc, 5),
+                'test_acc': round(test_acc, 5),
+            }
+            results.append(result)
+            
+            # Track best
+            if test_auc > best_auc:
+                best_auc = test_auc
+                best_params = params
+                best_model = model
+                best_pred = test_pred.copy()
+            else:
+                # Delete model to free memory
+                del model
+            
+            # Clear predictions
+            del train_pred, test_pred
+            
+            # Progress
+            if (i + 1) % 10 == 0:
+                elapsed = time.time() - start_time
+                remaining = len(configs) - i - 1
+                eta = elapsed / (i + 1 - start_idx) * remaining if i > start_idx else 0
+                print(f"  [{i+1}/{len(configs)}] Best AUC: {best_auc:.4f} | "
+                      f"Elapsed: {elapsed/60:.1f}min | ETA: {eta/60:.1f}min")
+            
+            # Checkpoint
+            if output_path and (i + 1) % CONFIG['checkpoint_interval'] == 0:
+                save_checkpoint(results, model_name, output_path, best_model, best_params)
+            
+            # CRITICAL: Garbage collection
+            gc.collect()
+            
+        except Exception as e:
+            print(f"  [{i+1}/{len(configs)}] FAILED: {str(e)[:60]}")
+            gc.collect()
+    
+    # Final save
+    if output_path:
+        save_checkpoint(results, model_name, output_path, best_model, best_params)
+    
+    elapsed = time.time() - start_time
+    print(f"\n  Completed in {elapsed/60:.1f} minutes")
+    print(f"  Best AUC: {best_auc:.4f}")
+    print(f"  Best params: {best_params}")
+    
+    return results, best_model, best_params, best_pred
+
+
+def print_top_results(results, model_name, n=15):
+    """Print top results."""
+    sorted_results = sorted(results, key=lambda x: -x['test_auc'])
+    
+    print(f"\n{'='*70}")
+    print(f"TOP {n} {model_name.upper()} CONFIGURATIONS")
+    print(f"{'='*70}")
+    
+    print(f"\n{'Rank':<6} {'Config':<8} {'Train AUC':<12} {'Test AUC':<12} {'Test Acc':<12}")
+    print("-" * 55)
+    
+    for rank, res in enumerate(sorted_results[:n], 1):
+        print(f"{rank:<6} {res['config_id']:<8} {res['train_auc']:<12.4f} {res['test_auc']:<12.4f} "
+              f"{res['test_acc']:<12.4f}")
+    
+    return sorted_results
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
 
 def main():
-    args = parse_args()
-    df = load_data(args.data_path)
+    print("="*70)
+    print("LOL WIN PREDICTION - HYPERPARAMETER FINE-TUNING V8.1")
+    print("(Memory Optimized + Checkpoint Resume)")
+    print(f"Started: {datetime.now()}")
+    print("="*70)
+    
+    # Load data
+    print("\n" + "="*60)
+    print("1. LOADING DATA")
+    print("="*60)
+    
+    train_df = pd.read_parquet(CONFIG['train_path'])
+    test_df = pd.read_parquet(CONFIG['test_path'])
+    
+    with open(CONFIG['features_path'], 'rb') as f:
+        features = pickle.load(f)
+    
+    print(f"Train: {len(train_df):,} rows")
+    print(f"Test: {len(test_df):,} rows")
+    print(f"Features: {len(features)}")
+    
+    X_train = train_df[features].fillna(0).values
+    y_train = train_df['hero_win'].values
+    X_test = test_df[features].fillna(0).values
+    y_test = test_df['hero_win'].values
+    
+    # Free dataframes
+    del train_df
+    gc.collect()
+    
+    # Generate configs
+    print("\n" + "="*60)
+    print("2. GENERATING CONFIGURATIONS")
+    print("="*60)
+    
+    et_configs = generate_et_configs(n_configs=400)
+    lgb_configs = generate_lgb_configs(n_configs=600)
+    xgb_configs = generate_xgb_configs(n_configs=600)
+    
+    print(f"ExtraTrees configs: {len(et_configs)}")
+    print(f"LightGBM configs: {len(lgb_configs)}")
+    print(f"XGBoost configs: {len(xgb_configs)}")
+    print(f"Total: {len(et_configs) + len(lgb_configs) + len(xgb_configs)}")
+    
+    out = CONFIG['output_dir']
+    all_best = {}
+    
+    # Fine-tune ExtraTrees
+    et_base = {'random_state': 42, 'n_jobs': -1}
+    et_results, et_model, et_params, et_pred = run_fine_tuning(
+        'et', ExtraTreesClassifier, et_configs,
+        X_train, y_train, X_test, y_test,
+        base_params=et_base, output_path=out,
+        resume=CONFIG['resume_from_checkpoint']
+    )
+    print_top_results(et_results, 'ExtraTrees')
+    all_best['et'] = {'model': et_model, 'params': et_params, 'pred': et_pred,
+                      'auc': max(r['test_auc'] for r in et_results)}
+    
+    # Clean up
+    gc.collect()
+    
+    # Fine-tune LightGBM
+    lgb_base = {'random_state': 42, 'verbose': -1, 'n_jobs': -1}
+    lgb_results, lgb_model, lgb_params, lgb_pred = run_fine_tuning(
+        'lgb', lgb.LGBMClassifier, lgb_configs,
+        X_train, y_train, X_test, y_test,
+        base_params=lgb_base, output_path=out,
+        resume=CONFIG['resume_from_checkpoint']
+    )
+    print_top_results(lgb_results, 'LightGBM')
+    all_best['lgb'] = {'model': lgb_model, 'params': lgb_params, 'pred': lgb_pred,
+                       'auc': max(r['test_auc'] for r in lgb_results)}
+    
+    gc.collect()
+    
+    # Fine-tune XGBoost
+    xgb_base = {'random_state': 42, 'eval_metric': 'logloss', 'verbosity': 0, 'n_jobs': -1}
+    xgb_results, xgb_model, xgb_params, xgb_pred = run_fine_tuning(
+        'xgb', xgb.XGBClassifier, xgb_configs,
+        X_train, y_train, X_test, y_test,
+        base_params=xgb_base, output_path=out,
+        resume=CONFIG['resume_from_checkpoint']
+    )
+    print_top_results(xgb_results, 'XGBoost')
+    all_best['xgb'] = {'model': xgb_model, 'params': xgb_params, 'pred': xgb_pred,
+                       'auc': max(r['test_auc'] for r in xgb_results)}
+    
+    # Overall summary
+    print("\n" + "="*70)
+    print("OVERALL BEST MODELS")
+    print("="*70)
+    
+    for name, info in sorted(all_best.items(), key=lambda x: -x[1]['auc']):
+        print(f"\n{name.upper()}: AUC = {info['auc']:.4f}")
+        print(f"  Params: {info['params']}")
+    
+    # Save predictions for ensemble
+    print("\n" + "="*60)
+    print("SAVING PREDICTIONS FOR ENSEMBLE")
+    print("="*60)
+    
+    predictions = {
+        'et': all_best['et']['pred'],
+        'lgb': all_best['lgb']['pred'],
+        'xgb': all_best['xgb']['pred'],
+        'y_test': y_test,
+    }
+    
+    with open(f"{out}/best_predictions_v8.pkl", 'wb') as f:
+        pickle.dump(predictions, f)
+    
+    # Save summary
+    summary = {
+        'timestamp': datetime.now().isoformat(),
+        'best_models': {
+            name: {'auc': info['auc'], 'params': info['params']}
+            for name, info in all_best.items()
+        }
+    }
+    with open(f"{out}/finetuning_summary_v8.json", 'w') as f:
+        json.dump(summary, f, indent=2, default=str)
+    
+    print(f"\nSaved to {out}/")
+    
+    print("\n" + "="*70)
+    print(f"COMPLETED: {datetime.now()}")
+    print("="*70)
+    
+    return all_best
 
-    print("Loaded dataset:", df.shape)
-    if "hero_puuid" in df.columns:
-        print("INFO: hero_puuid present (debug only) -> excluded from training features.")
 
-    # hard sanity: matchId unique?
-    if df[ID_COL].duplicated().any():
-        dup = int(df[ID_COL].duplicated().sum())
-        raise RuntimeError(f"Found duplicated matchId rows: {dup}. Fix this before training (hard leakage risk).")
-
-    experiments = make_experiments()
-    results = []
-
-    for cfg in experiments:
-        print("\n" + "=" * 90)
-        print(f"Experiment: {cfg.name} | FS={cfg.feature_set} | model={cfg.model_type} | params={cfg.params}")
-
-        try:
-            X_tr, X_te, X_va, y_tr, y_te, y_va, feat_cols = prepare_splits(
-                df,
-                feature_set=cfg.feature_set,
-                test_size=args.test_size,
-                val_size=args.val_size,
-                random_state=args.random_state,
-                matchup_alpha=args.matchup_alpha,
-                matchup_beta=args.matchup_beta,
-                matchup_min_count=args.matchup_min_count,
-            )
-            metrics = train_and_evaluate(cfg, X_tr, X_te, X_va, y_tr, y_te, y_va)
-
-        except Exception as e:
-            print(f"FAIL {cfg.name}: {type(e).__name__}: {e}")
-            continue
-
-        results.append(metrics)
-
-        print(f"AUC  train/test/val: {metrics['auc_train']:.4f} / {metrics['auc_test']:.4f} / {metrics['auc_val']:.4f}")
-        print(f"LL   train/test/val: {metrics['logloss_train']:.4f} / {metrics['logloss_test']:.4f} / {metrics['logloss_val']:.4f}")
-        print(f"ACC  train/test/val: {metrics['acc_train']:.4f} / {metrics['acc_test']:.4f} / {metrics['acc_val']:.4f}")
-        print(f"#features: {metrics['n_features']} | cols={feat_cols}")
-
-    if not results:
-        print("No experiments succeeded.")
-        return
-
-    out_dir = "data/models"
-    os.makedirs(out_dir, exist_ok=True)
-
-    results_df = pd.DataFrame(results).sort_values(by="auc_val", ascending=False)
-    out_path = os.path.join(out_dir, "baseline_results_hero_clean.csv")
-    results_df.to_csv(out_path, index=False)
-
-    print("\n" + "=" * 90)
-    print("Saved results:", out_path)
-    print(results_df.to_string(index=False))
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    best_models = main()

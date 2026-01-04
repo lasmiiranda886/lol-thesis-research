@@ -1,0 +1,297 @@
+{
+  "_metadata": {
+    "version": "3.1",
+    "last_updated": "2025-12-24",
+    "based_on_patch": "25.24",
+    "notes": "Complete coverage of all 169 champions with gameplay classifications + ELO_EFFECTIVENESS based on 460k+ match analysis",
+    "total_champions": 169,
+    "sources": [
+      "League of Legends Wiki (wiki.leagueoflegends.com)",
+      "Mobalytics (mobalytics.gg)",
+      "U.GG (u.gg)",
+      "1v9.gg champion guides",
+      "LoL Fandom Wiki",
+      "V18 dataset winrate analysis (460k+ matches)"
+    ]
+  },
+
+  "HARD_ENGAGE": {
+    "_description": "Champions mit zuverlaessigem Teamfight-Engage. Score: 3=S, 2=A, 1=B",
+    "S_TIER": ["Malphite", "Ornn", "Leona", "Rell", "Amumu", "Sejuani", "Nautilus"],
+    "A_TIER": ["Rakan", "Alistar", "Zac", "JarvanIV", "Maokai", "Sion", "Thresh", "Blitzcrank", "Pyke", "Skarner"],
+    "B_TIER": ["Galio", "Shen", "Gragas", "Diana", "Hecarim", "MonkeyKing", "Kennen", "Neeko", "Yone", "Kled", "Vi", "Nocturne", "Poppy", "RekSai", "Swain", "Lissandra", "Gnar", "Vex", "Fiddlesticks", "Evelynn", "Pantheon", "Rengar", "Volibear", "Aurora", "Ambessa"]
+  },
+
+  "SCALING_HYPERCARRY": {
+    "_description": "Champions die im Late Game dominieren. Score: 3=S, 2=A, 1=B",
+    "S_TIER": ["Kassadin", "Veigar", "Azir", "AurelionSol", "Smolder", "Kayle"],
+    "A_TIER": ["Jinx", "Vayne", "KogMaw", "Twitch", "Aphelios", "Tristana", "Senna", "Vladimir", "Ryze", "Viktor", "Syndra", "Karthus", "MasterYi", "Nilah", "Belveth", "Kindred", "Cassiopeia"],
+    "B_TIER": ["Kaisa", "Sivir", "Ezreal", "Orianna", "Gangplank", "Fiora", "Jax", "Nasus", "Zeri", "Anivia", "Samira", "Xayah", "Draven", "Gwen", "Yasuo", "Yone", "Viego"]
+  },
+
+  "TANK_SHREDDER": {
+    "_description": "Champions die effektiv Tanks neutralisieren - % HP damage oder true damage",
+    "champions": ["KogMaw", "Brand", "Gwen", "Mordekaiser", "Amumu", "Lillia", "Malzahar", "Vayne", "Kaisa", "Fiora", "Camille", "MasterYi", "Kindred", "Trundle", "Varus", "Cassiopeia", "Velkoz", "Zyra", "Swain", "Sett", "Darius", "Chogath", "Olaf", "Kalista"]
+  },
+
+  "FRONTLINE": {
+    "_description": "Champions die als Frontline fungieren koennen",
+    "TRUE_TANKS": ["Alistar", "Amumu", "Braum", "Chogath", "DrMundo", "Galio", "KSante", "Leona", "Malphite", "Maokai", "Nautilus", "Ornn", "Poppy", "Rammus", "Rell", "Sejuani", "Shen", "Sion", "Skarner", "TahmKench", "Taric", "Thresh", "Volibear", "Zac", "Singed", "Nunu"],
+    "BRUISERS": ["Aatrox", "Darius", "Garen", "Illaoi", "Mordekaiser", "Nasus", "Olaf", "Renekton", "Sett", "Trundle", "Udyr", "Urgot", "Warwick", "Yorick", "Swain", "Gnar", "Rumble", "Sylas", "Camille", "Diana", "Gragas", "Hecarim", "JarvanIV", "Kled", "LeeSin", "Nocturne", "Pantheon", "RekSai", "Shyvana", "Vi", "MonkeyKing", "XinZhao", "Briar", "Viego", "Kayn", "Irelia", "Riven", "Jax", "Fiora", "Ambessa"]
+  },
+
+  "ENCHANTERS": {
+    "_description": "Supports die Allies heilen, shielden und buffen",
+    "champions": ["Lulu", "Janna", "Nami", "Soraka", "Yuumi", "Sona", "Karma", "Milio", "Renata", "Seraphine", "Zilean", "Ivern", "Bard", "Taric"]
+  },
+
+  "ASSASSINS": {
+    "_description": "Champions die schnell Priority Targets eliminieren",
+    "AD": ["Zed", "Talon", "Qiyana", "Khazix", "Rengar", "Shaco", "Pyke", "Naafiri", "Pantheon", "Nocturne"],
+    "AP": ["Akali", "Katarina", "Fizz", "Leblanc", "Ekko", "Evelynn", "Kassadin", "Nidalee", "Elise", "Ahri"],
+    "HYBRID": ["Akshan", "Kayn", "Viego", "Briar"]
+  },
+
+  "POKE_ARTILLERY": {
+    "_description": "Champions mit langem Range Poke - wichtig in sieges",
+    "S_TIER": ["Xerath", "Velkoz", "Ziggs", "Jayce", "Varus", "Zoe", "Hwei"],
+    "A_TIER": ["Azir", "Viktor", "Syndra", "Orianna", "Lux", "Corki", "Karma", "Seraphine", "KogMaw", "Ezreal", "Caitlyn", "Jhin", "Nidalee", "Heimerdinger"]
+  },
+
+  "DISENGAGE": {
+    "_description": "Champions die Engages stoppen koennen",
+    "S_TIER": ["Janna", "Poppy", "Gragas", "Lulu"],
+    "A_TIER": ["Thresh", "Alistar", "LeeSin", "Taliyah", "Azir", "Anivia", "Braum", "Nami", "Milio", "Zilean", "Zyra", "TahmKench", "Bard", "Morgana"]
+  },
+
+  "HOOKS": {
+    "_description": "Champions mit Hook-Abilities fuer Picks",
+    "champions": ["Blitzcrank", "Thresh", "Nautilus", "Pyke", "Swain"]
+  },
+
+  "SPLITPUSH": {
+    "_description": "Champions die effektiv splitpushen koennen",
+    "S_TIER": ["Fiora", "Jax", "Tryndamere", "Yorick", "Camille"],
+    "A_TIER": ["Nasus", "Gwen", "Shen", "Gangplank", "Kayle", "TwistedFate", "Trundle", "Illaoi", "Garen", "Mordekaiser", "Volibear", "Udyr", "MasterYi"]
+  },
+
+  "GLOBAL_PRESENCE": {
+    "_description": "Champions mit globalen oder semi-globalen Abilities",
+    "TRUE_GLOBAL": ["Shen", "TwistedFate", "Karthus", "Soraka", "Gangplank"],
+    "SEMI_GLOBAL": ["Nocturne", "Ashe", "Jinx", "Ezreal", "Draven", "Ziggs", "Pantheon", "Galio", "Ryze", "Taliyah", "Bard"]
+  },
+
+  "BURST_DAMAGE": {
+    "_description": "Champions mit hohem Burst - wichtig vs squishies",
+    "EXTREME": ["Veigar", "Syndra", "Leblanc", "Zed", "Talon", "Rengar", "Khazix", "Fizz", "Qiyana", "Evelynn", "Annie", "Lux", "Brand"],
+    "HIGH": ["Akali", "Katarina", "Ekko", "Ahri", "Viktor", "Orianna", "Kassadin", "Zoe", "Neeko", "Naafiri", "Pyke", "Shaco", "Graves", "Lucian", "Draven", "Jhin", "MissFortune", "Caitlyn", "Hwei"]
+  },
+
+  "SUSTAINED_DPS": {
+    "_description": "Champions mit konstantem Damage Output",
+    "S_TIER": ["Cassiopeia", "Azir", "KogMaw", "Jinx", "Vayne", "Twitch", "Aphelios", "Kalista", "MasterYi", "Kayle"],
+    "A_TIER": ["Ashe", "Sivir", "Tristana", "Varus", "Xayah", "Zeri", "Kaisa", "Samira", "Nilah", "Kindred", "Graves", "Lucian", "Ezreal", "Corki", "Orianna", "Ryze", "Viktor", "Smolder"]
+  },
+
+  "CC_LOCKDOWN": {
+    "_description": "Champions mit starkem single-target oder AoE CC",
+    "SINGLE_TARGET": ["Nautilus", "Leona", "Vi", "Malzahar", "Warwick", "Skarner", "TahmKench", "Mordekaiser", "Renata"],
+    "AOE": ["Amumu", "Sejuani", "Ornn", "Malphite", "Rell", "Kennen", "Neeko", "Seraphine", "Zyra", "Fiddlesticks", "Gnar", "MonkeyKing", "Diana", "Lissandra", "Vex", "Aurora", "Sona"]
+  },
+
+  "WAVECLEAR": {
+    "_description": "Champions mit schneller Waveclear",
+    "S_TIER": ["Anivia", "Ziggs", "Viktor", "Sivir", "Azir", "Ryze", "AurelionSol", "Heimerdinger", "Syndra"],
+    "A_TIER": ["Orianna", "Lux", "Brand", "Xerath", "Velkoz", "Taliyah", "Malzahar", "Mordekaiser", "Rumble", "Gangplank", "Jinx", "Tristana", "Kaisa", "Zeri", "Corki", "Hwei", "Smolder"]
+  },
+
+  "MOBILITY": {
+    "_description": "Champions mit hoher Mobilitaet",
+    "EXTREME": ["Kassadin", "Akali", "Katarina", "Yasuo", "Yone", "LeeSin", "Zed", "Leblanc", "Ekko", "Fizz", "Kalista", "Lucian", "Riven", "Irelia", "Camille", "Qiyana", "Talon", "Kayn"],
+    "HIGH": ["Ahri", "Ezreal", "Tristana", "Corki", "Zeri", "Samira", "Rengar", "Khazix", "Nidalee", "Elise", "Gragas", "JarvanIV", "Vi", "Hecarim", "Rakan", "Pyke", "Akshan", "Briar", "Vex", "Aurora", "Ambessa", "Kindred"]
+  },
+
+  "SELF_SUFFICIENT": {
+    "_description": "Carries die wenig Peel brauchen - wichtig in low elo",
+    "champions": ["Vayne", "Ezreal", "Tristana", "Kaisa", "Samira", "Xayah", "Zeri", "Sivir", "Nilah", "Akshan"]
+  },
+
+  "PEEL_RELIANT": {
+    "_description": "Carries die viel Peel brauchen - schwaecher ohne Support",
+    "champions": ["KogMaw", "Aphelios", "Jinx", "Twitch", "Draven", "Varus", "Ashe", "MissFortune", "Jhin", "Kalista", "Smolder"]
+  },
+
+  "ARMOR_STACKERS": {
+    "_description": "Champions gegen die Full-AD besonders schlecht ist",
+    "EXTREME": ["Malphite", "Rammus"],
+    "HIGH": ["Ornn", "Sion", "Poppy", "Leona", "Taric", "Braum", "Sejuani", "Zac", "Maokai", "Nautilus"]
+  },
+
+  "MAGIC_RESIST_STACKERS": {
+    "_description": "Champions gegen die Full-AP problematisch ist",
+    "champions": ["Galio", "KSante", "DrMundo", "Kassadin", "Maokai"]
+  },
+
+  "TRUE_DAMAGE": {
+    "_description": "Champions mit signifikantem True Damage",
+    "champions": ["Vayne", "Fiora", "Camille", "Gwen", "Velkoz", "Ahri", "Chogath", "Darius", "Olaf", "MasterYi", "Kayle", "Sett", "Lillia"]
+  },
+
+  "DAMAGE_TYPE_OVERRIDE": {
+    "_description": "Champions mit atypischem Damage Type",
+    "PRIMARILY_MAGIC": ["Corki", "Teemo", "Kayle", "Shyvana", "Elise"],
+    "HYBRID_DAMAGE": ["Kaisa", "Varus", "KogMaw", "Ezreal", "Twitch", "Shyvana", "Akali", "Katarina", "MasterYi", "Jax", "Irelia", "Warwick"]
+  },
+
+  "JUNGLE_CLEAR": {
+    "_description": "Jungle clear speed - wichtig fuer Jungle-Matchups",
+    "S_TIER": ["Karthus", "Fiddlesticks", "Shyvana", "Lillia", "Udyr", "Hecarim", "Diana", "Graves"],
+    "A_TIER": ["MasterYi", "Kindred", "Nidalee", "Ekko", "Viego", "Kayn", "Volibear", "MonkeyKing", "Vi", "JarvanIV", "Nocturne", "RekSai", "Briar", "Belveth", "Amumu"]
+  },
+
+  "EARLY_GAME": {
+    "_description": "Champions mit starkem Early Game",
+    "S_TIER": ["Draven", "LeeSin", "Elise", "Nidalee", "Pantheon", "Renekton", "Darius", "Olaf"],
+    "A_TIER": ["Lucian", "Caitlyn", "Kalista", "Xayah", "Graves", "Kindred", "RekSai", "JarvanIV", "Rumble", "Jayce", "Quinn", "Syndra", "Leblanc", "Talon", "Zed", "Ambessa"]
+  },
+
+  "TEAMFIGHT": {
+    "_description": "Teamfight impact unabhaengig von Engage",
+    "S_TIER": ["Orianna", "Seraphine", "Zyra", "Fiddlesticks", "Karthus", "MissFortune", "Samira", "Katarina", "Kennen", "Diana", "Amumu", "Malphite", "Jinx", "Twitch"],
+    "A_TIER": ["Brand", "Lissandra", "Neeko", "Viktor", "Syndra", "Azir", "Rumble", "Gnar", "MonkeyKing", "Rell", "Sejuani", "Rakan", "Morgana", "Thresh", "Sona", "Nami", "Aurora"]
+  },
+
+  "PICK_POTENTIAL": {
+    "_description": "Champions gut fuer einzelne Picks",
+    "S_TIER": ["Blitzcrank", "Thresh", "Nautilus", "Pyke", "Zoe", "Ahri", "Syndra", "Leblanc", "Rengar", "Evelynn", "TwistedFate", "Nocturne"],
+    "A_TIER": ["Morgana", "Lux", "Neeko", "Vex", "Elise", "LeeSin", "Vi", "Ashe", "Jhin", "Varus", "Skarner", "Swain"]
+  },
+
+  "UTILITY_SUPPORT": {
+    "_description": "Supports nach Utility-Typ",
+    "ENGAGE": ["Nautilus", "Leona", "Rell", "Alistar", "Rakan", "Thresh", "Blitzcrank", "Pyke", "Maokai"],
+    "ENCHANTER": ["Lulu", "Janna", "Nami", "Soraka", "Yuumi", "Sona", "Karma", "Milio", "Renata", "Seraphine"],
+    "POKE_MAGE": ["Zyra", "Brand", "Xerath", "Velkoz", "Lux", "Morgana", "Swain", "Hwei"],
+    "HYBRID": ["Thresh", "Bard", "Taric", "Braum", "TahmKench", "Senna", "Zilean"]
+  },
+
+  "ROAMING": {
+    "_description": "Champions gut im Roaming - wichtig fuer Mid/Support",
+    "S_TIER": ["TwistedFate", "Talon", "AurelionSol", "Bard", "Pyke", "Rakan", "Pantheon"],
+    "A_TIER": ["Katarina", "Qiyana", "Galio", "Ahri", "Leblanc", "Zed", "Akali", "Thresh", "Alistar", "Leona", "Nautilus", "Rell", "Nocturne"]
+  },
+
+  "OBJECTIVE_CONTROL": {
+    "_description": "Champions gut fuer Baron/Dragon Control",
+    "STEAL_POTENTIAL": ["Nunu", "LeeSin", "Chogath", "Kalista", "Ekko", "Graves", "Vi", "Elise"],
+    "ZONE_CONTROL": ["Azir", "Anivia", "Taliyah", "Ziggs", "Zyra", "Orianna", "Viktor", "Rumble", "Gangplank", "MissFortune", "Hwei"]
+  },
+
+  "TOWER_SIEGE": {
+    "_description": "Champions gut beim Turm-Pushen",
+    "S_TIER": ["Ziggs", "Tristana", "Yorick", "Tryndamere", "Jax", "Fiora", "Nasus", "Azir"],
+    "A_TIER": ["Jinx", "Caitlyn", "Heimerdinger", "Viktor", "Veigar", "Xayah", "Sivir", "Kayle", "Camille", "Gwen", "Illaoi", "Volibear"]
+  },
+
+  "ANTI_DIVE": {
+    "_description": "Champions die Dives verhindern koennen",
+    "champions": ["Lulu", "Janna", "Poppy", "Thresh", "Alistar", "TahmKench", "Braum", "Zilean", "Kayle", "Kindred", "Taric", "Bard"]
+  },
+
+  "DIVE_POTENTIAL": {
+    "_description": "Champions gut im Tower Diving",
+    "S_TIER": ["Elise", "Ekko", "Fizz", "Kayle", "Kindred", "Tryndamere", "Kled", "Aatrox"],
+    "A_TIER": ["LeeSin", "Nocturne", "Diana", "Akali", "Zed", "Talon", "Renekton", "Pantheon", "Volibear", "Hecarim"]
+  },
+
+  "VISION_CONTROL": {
+    "_description": "Champions die Vision geben oder denien",
+    "VISION_GRANT": ["TwistedFate", "Ashe", "Quinn", "Kalista", "Fiddlesticks"],
+    "VISION_DENY": ["Nocturne", "Graves", "Quinn"]
+  },
+
+  "ALL_CHAMPIONS_BY_ID": {
+    "_description": "Champion name to ID mapping for code reference - ALL 169 champions",
+    "Aatrox": 266, "Ahri": 103, "Akali": 84, "Akshan": 166, "Alistar": 12, "Ambessa": 799,
+    "Amumu": 32, "Anivia": 34, "Annie": 1, "Aphelios": 523, "Ashe": 22, "AurelionSol": 136,
+    "Aurora": 893, "Azir": 268, "Bard": 432, "Belveth": 200, "Blitzcrank": 53, "Brand": 63,
+    "Braum": 201, "Briar": 233, "Caitlyn": 51, "Camille": 164, "Cassiopeia": 69, "Chogath": 31,
+    "Corki": 42, "Darius": 122, "Diana": 131, "Draven": 119, "DrMundo": 36, "Ekko": 245,
+    "Elise": 60, "Evelynn": 28, "Ezreal": 81, "Fiddlesticks": 9, "Fiora": 114, "Fizz": 105,
+    "Galio": 3, "Gangplank": 41, "Garen": 86, "Gnar": 150, "Gragas": 79, "Graves": 104,
+    "Gwen": 887, "Hecarim": 120, "Heimerdinger": 74, "Hwei": 910, "Illaoi": 420, "Irelia": 39,
+    "Ivern": 427, "Janna": 40, "JarvanIV": 59, "Jax": 24, "Jayce": 126, "Jhin": 202,
+    "Jinx": 222, "Kaisa": 145, "Kalista": 429, "Karma": 43, "Karthus": 30, "Kassadin": 38,
+    "Katarina": 55, "Kayle": 10, "Kayn": 141, "Kennen": 85, "Khazix": 121, "Kindred": 203,
+    "Kled": 240, "KogMaw": 96, "KSante": 897, "Leblanc": 7, "LeeSin": 64, "Leona": 89,
+    "Lillia": 876, "Lissandra": 127, "Lucian": 236, "Lulu": 117, "Lux": 99, "Malphite": 54,
+    "Malzahar": 90, "Maokai": 57, "MasterYi": 11, "Milio": 902, "MissFortune": 21,
+    "MonkeyKing": 62, "Mordekaiser": 82, "Morgana": 25, "Naafiri": 950, "Nami": 267,
+    "Nasus": 75, "Nautilus": 111, "Neeko": 518, "Nidalee": 76, "Nilah": 895, "Nocturne": 56,
+    "Nunu": 20, "Olaf": 2, "Orianna": 61, "Ornn": 516, "Pantheon": 80, "Poppy": 78,
+    "Pyke": 555, "Qiyana": 246, "Quinn": 133, "Rakan": 497, "Rammus": 33, "RekSai": 421,
+    "Rell": 526, "Renata": 888, "Renekton": 58, "Rengar": 107, "Riven": 92, "Rumble": 68,
+    "Ryze": 13, "Samira": 360, "Sejuani": 113, "Senna": 235, "Seraphine": 147, "Sett": 875,
+    "Shaco": 35, "Shen": 98, "Shyvana": 102, "Singed": 27, "Sion": 14, "Sivir": 15,
+    "Skarner": 72, "Smolder": 901, "Sona": 37, "Soraka": 16, "Swain": 50, "Sylas": 517,
+    "Syndra": 134, "TahmKench": 223, "Taliyah": 163, "Talon": 91, "Taric": 44, "Teemo": 17,
+    "Thresh": 412, "Tristana": 18, "Trundle": 48, "Tryndamere": 23, "TwistedFate": 4,
+    "Twitch": 29, "Udyr": 77, "Urgot": 6, "Varus": 110, "Vayne": 67, "Veigar": 45,
+    "Velkoz": 161, "Vex": 711, "Vi": 254, "Viego": 234, "Viktor": 112, "Vladimir": 8,
+    "Volibear": 106, "Warwick": 19, "Xayah": 498, "Xerath": 101, "XinZhao": 5, "Yasuo": 157,
+    "Yone": 777, "Yorick": 83, "Yuumi": 350, "Zac": 154, "Zed": 238, "Zeri": 221,
+    "Ziggs": 115, "Zilean": 26, "Zoe": 142, "Zyra": 143
+  },
+
+  "CHAMPION_ROLE_PRIMARY": {
+    "_description": "Primary role for each champion",
+    "TOP": ["Aatrox", "Camille", "Chogath", "Darius", "DrMundo", "Fiora", "Gangplank", "Garen", "Gnar", "Gwen", "Illaoi", "Irelia", "Jax", "Jayce", "Kayle", "Kennen", "Kled", "KSante", "Malphite", "Mordekaiser", "Nasus", "Olaf", "Ornn", "Pantheon", "Poppy", "Quinn", "Renekton", "Riven", "Rumble", "Sett", "Shen", "Singed", "Sion", "Teemo", "Trundle", "Tryndamere", "Urgot", "Volibear", "Yorick", "Ambessa"],
+    "JUNGLE": ["Amumu", "Belveth", "Briar", "Diana", "Ekko", "Elise", "Evelynn", "Fiddlesticks", "Gragas", "Graves", "Hecarim", "Ivern", "JarvanIV", "Kayn", "Khazix", "Kindred", "LeeSin", "Lillia", "MasterYi", "Nidalee", "Nocturne", "Nunu", "RekSai", "Rengar", "Sejuani", "Shaco", "Shyvana", "Skarner", "Taliyah", "Udyr", "Vi", "Viego", "Volibear", "Warwick", "MonkeyKing", "XinZhao", "Zac", "Karthus"],
+    "MID": ["Ahri", "Akali", "Anivia", "Annie", "AurelionSol", "Azir", "Cassiopeia", "Corki", "Ekko", "Fizz", "Galio", "Heimerdinger", "Hwei", "Kassadin", "Katarina", "Leblanc", "Lissandra", "Lux", "Malzahar", "Neeko", "Orianna", "Qiyana", "Ryze", "Syndra", "Sylas", "Talon", "TwistedFate", "Veigar", "Vex", "Viktor", "Vladimir", "Xerath", "Yasuo", "Yone", "Zed", "Zoe", "Aurora", "Naafiri", "Smolder"],
+    "ADC": ["Aphelios", "Ashe", "Caitlyn", "Draven", "Ezreal", "Jhin", "Jinx", "Kaisa", "Kalista", "KogMaw", "Lucian", "MissFortune", "Nilah", "Samira", "Senna", "Sivir", "Smolder", "Tristana", "Twitch", "Varus", "Vayne", "Xayah", "Zeri"],
+    "SUPPORT": ["Alistar", "Bard", "Blitzcrank", "Brand", "Braum", "Janna", "Karma", "Leona", "Lulu", "Lux", "Maokai", "Milio", "Morgana", "Nami", "Nautilus", "Pyke", "Rakan", "Rell", "Renata", "Senna", "Seraphine", "Sona", "Soraka", "Swain", "TahmKench", "Taric", "Thresh", "Velkoz", "Xerath", "Yuumi", "Zilean", "Zyra"]
+  },
+
+  "ELO_EFFECTIVENESS": {
+    "_description": "Champion effectiveness by elo tier - based on winrate analysis across 460k+ matches",
+    "_methodology": "Compared winrates in LOW (Iron-Silver), MID (Gold-Platinum), HIGH (Emerald+) elos. HIGH_ELO_SCALING = >5% better in high elo, LOW_ELO_EFFECTIVE = similar or better in low elo, CONSISTENT = stable across all elos",
+    "_data_source": "V18 dataset analysis, December 2024",
+
+    "HIGH_ELO_SCALING": {
+      "_description": "Champions that perform significantly better (+5%+) in high elo - require mechanical skill or team coordination",
+      "EXTREME": ["Rengar", "Taliyah", "Ivern", "Talon", "Fiora", "Qiyana", "Kassadin", "Riven"],
+      "HIGH": ["Nidalee", "Elise", "LeeSin", "Azir", "Irelia", "Akali", "Leblanc", "Zed", "Yasuo", "Yone", "Camille", "Jayce", "Ryze", "Thresh", "Bard", "Kalista", "Draven", "Lucian", "Aphelios"]
+    },
+
+    "LOW_ELO_EFFECTIVE": {
+      "_description": "Champions that perform well in low elo - simple kits, forgiving, or punish disorganization",
+      "STOMPERS": ["Garen", "Malphite", "Amumu", "Annie", "MissFortune", "Blitzcrank", "Leona", "Warwick", "MasterYi", "Tryndamere"],
+      "SIMPLE_SCALING": ["Nasus", "Veigar", "Malzahar", "Kayle", "Sion", "DrMundo", "Chogath", "Morgana"],
+      "ZONE_CONTROL": ["Heimerdinger", "Teemo", "Zyra", "Brand", "Swain", "Illaoi"]
+    },
+
+    "CONSISTENT_ALL_ELOS": {
+      "_description": "Champions with stable performance across all elo tiers (within 3% variance)",
+      "champions": ["Shyvana", "Teemo", "Nocturne", "Zyra", "Soraka", "Garen", "Malphite", "Sejuani", "Vi", "Jinx", "Jhin", "Lux", "Orianna", "Syndra", "Maokai", "Nautilus", "Senna", "Karma", "Nami"]
+    },
+
+    "ELO_SPECIFIC_NOTES": {
+      "IRON_BRONZE": {
+        "_note": "Focus on simple champions with clear win conditions",
+        "recommended": ["Garen", "Annie", "Malphite", "Amumu", "MissFortune", "Blitzcrank", "Warwick", "Nasus"]
+      },
+      "SILVER_GOLD": {
+        "_note": "Can start learning more complex champions, macro becomes important",
+        "recommended": ["Jinx", "Jhin", "Leona", "Nautilus", "Sejuani", "Orianna", "Veigar", "Malzahar"]
+      },
+      "PLATINUM_EMERALD": {
+        "_note": "Mechanical champions become viable, team coordination improves",
+        "recommended": ["Thresh", "LeeSin", "Lucian", "Irelia", "Fiora", "Camille", "Syndra", "Viktor"]
+      },
+      "DIAMOND_PLUS": {
+        "_note": "High skill ceiling champions reach full potential",
+        "recommended": ["Rengar", "Nidalee", "Azir", "Qiyana", "Riven", "Kalista", "Aphelios", "Ivern"]
+      }
+    }
+  }
+}

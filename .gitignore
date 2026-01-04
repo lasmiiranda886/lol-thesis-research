@@ -2,17 +2,39 @@
 .env
 *.env
 .env.*
+riot.txt
+collection_config.json
 
 # Python
 __pycache__/
 *.py[cod]
 venv/
 .venv/
+activate/
 
-# Data files (zu gross für GitHub)
-data/
-*.parquet
-*.json
+# Data files (raw data too large for GitHub)
+data/*
+!data/static/
+!data/static/*.json
+!data/final/
+!data/final/*.parquet
+data/static/*.parquet
+
+# Models (too large for GitHub - 1GB)
+models/
+
+# Generated during training
+catboost_info/
+logs/
+nohup/
+
+# Reports (can be regenerated)
+reports/
+
+# Thesis documents (Word/PDF)
+*.docx
+*.pdf
+thesis/
 
 # IDE
 .idea/
@@ -22,3 +44,6 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code
+.claude/
